@@ -130,7 +130,7 @@ class Game {
         }
 
         this.state = 'TRIBUTE';
-        this.tributeInfo = { tributes: [], returns: [] };
+        this.tributeInfo = { tributes: [], returns: [], history: [] };
 
         const isDoubleWin = second.team === first.team;
         
@@ -156,6 +156,11 @@ class Game {
                     const card = t.from.hand.splice(highest.index, 1)[0];
                     t.to.hand.push(card);
                     this.addLog(`${t.from.name} tributed ${card.suit || ''}${card.rank} to ${t.to.name}`);
+                    this.tributeInfo.history.push({
+                        fromName: t.from.name,
+                        toName: t.to.name,
+                        card: card
+                    });
                 }
             });
 
@@ -338,7 +343,16 @@ class Game {
             lastPlay: this.lastPlay,
             winners: this.winners,
             log: this.log,
-            tributeInfo: this.tributeInfo,
+            tributeInfo: this.tributeInfo ? {
+                history: this.tributeInfo.history,
+                returns: this.tributeInfo.returns,
+                tributes: this.tributeInfo.tributes.map(t => ({
+                    fromId: t.from.id,
+                    fromName: t.from.name,
+                    toId: t.to.id,
+                    toName: t.to.name
+                }))
+            } : null,
             players: this.players.map(p => ({
                 id: p.id,
                 name: p.name,

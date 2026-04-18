@@ -82,7 +82,11 @@ const translations = {
     selectOne: "请选择恰好一张牌还贡",
     someonePlay: (name) => `${name} 的出牌`,
     wild: "百搭",
-    resistance: "抗贡！由于拥有两张大王，进贡取消"
+    resistance: "抗贡！由于拥有两张大王，进贡取消",
+    tributeHistory: "进贡记录",
+    tributeReceived: (from, card) => `收到来自 ${from} 的 ${card}`,
+    waitingReturn: "等待还贡：",
+    returnPending: "待还贡"
   }
 };
 
@@ -181,12 +185,14 @@ function App() {
 
   // Tribute Logic Helpers
   const isMyTributeTurn = useMemo(() => {
-    if (!gameState) return false;
+    if (!gameState || !gameState.tributeInfo) return false;
     const myPlayer = gameState.players.find(p => p.socketId === socket.id);
     if (!myPlayer) return false;
     
     if (gameState.state === 'RETURN_TRIBUTE') {
-       return gameState.tributeInfo?.returnerId === myPlayer.id;
+       const myTributeAction = gameState.tributeInfo.tributes.find(t => t.toId === myPlayer.id);
+       const alreadyReturned = gameState.tributeInfo.returns.includes(myPlayer.id);
+       return !!myTributeAction && !alreadyReturned;
     }
     return false;
   }, [gameState]);
@@ -380,6 +386,43 @@ function App() {
       </div>
 
       <div className="table-area">
+        {/* Tribute Info Panel */}
+        {(gameState?.state === 'TRIBUTE' || gameState?.state === 'RETURN_TRIBUTE') && gameState.tributeInfo && (
+          <div className="tribute-panel glass-panel">
+            <div className="tribute-header">
+              <Icons.ShieldAlert size={18} /> {t('tributeHistory')}
+            </div>
+            <div className="tribute-list">
+              {gameState.tributeInfo.history.map((h, i) => (
+                <div key={i} className="tribute-item">
+                  <span className="player-name">{h.fromName}</span>
+                  <Icons.ArrowRight size={14} />
+                  <span className="player-name">{h.toName}</span>
+                  <div className="tribute-card-desc">
+                    <Card card={h.card} small currentLevel={gameState.currentLevel} t={t} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {gameState.state === 'RETURN_TRIBUTE' && (
+              <div className="waiting-section">
+                <div className="waiting-label">{t('waitingReturn')}</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '5px' }}>
+                  {gameState.tributeInfo.tributes.map(t => {
+                    const hasReturned = gameState.tributeInfo.returns.includes(t.toId);
+                    if (hasReturned) return null;
+                    return (
+                      <span key={t.toId} className="pending-return-tag">
+                        {t.toName}
+                      </span>
+                    );
+                  }).filter(Boolean)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Turn Indicator */}
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
             {gameState?.state === 'TRIBUTE' && <div className="turn-indicator">{t('tributing')}</div>}
