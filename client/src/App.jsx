@@ -7,7 +7,120 @@ const socket = io();
 
 const RANKS_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
+const translations = {
+  en: {
+    title: "GUANDAN 掼蛋",
+    subtitle: "Multiplayer Strategy Card Game",
+    roomStatus: "Room Status",
+    reconnect: "Reconnect",
+    roomEmpty: "Room is empty awaiting players.",
+    serverConnected: "Server Connected",
+    connecting: "Connecting to Server...",
+    yourName: "Your Name",
+    joinTable: "Join Table",
+    joining: "Joining...",
+    connectingBtn: "Connecting...",
+    reconnectAs: (name) => `Reconnect as ${name}`,
+    resetState: "Reset All Server State",
+    level: "Level",
+    teamLevel: (val) => `Level ${val}`,
+    teamInfo: (id, val) => `Team ${id}: Level ${val}`,
+    startGame: "Start Game",
+    resetTable: "Reset Table",
+    tributing: "TRIBUTING...",
+    returningTribute: "RETURNING TRIBUTE...",
+    gameLog: "Game Log",
+    playCards: "Play Cards",
+    pass: "Pass",
+    returnCard: "Return Selected Card",
+    gameOver: "GAME OVER",
+    nextRound: "Next Round",
+    rank: (val) => `Rank ${val}`,
+    cardsCount: (val) => `${val} cards`,
+    offline: "Offline",
+    acting: "ACTING...",
+    you: "(You)",
+    playSuccess: "Play successful",
+    selectOne: "Select exactly one card to return",
+    someonePlay: (name) => `${name}'s Play`,
+    wild: "WILD",
+    resistance: "RESISTANCE! Tribute cancelled due to 2 Big Jokers."
+  },
+  cn: {
+    title: "掼蛋",
+    subtitle: "多人策略扑克游戏",
+    roomStatus: "房间状态",
+    reconnect: "重新连接",
+    roomEmpty: "房间为空，等待玩家...",
+    serverConnected: "服务器已连接",
+    connecting: "正在连接服务器...",
+    yourName: "您的名字",
+    joinTable: "加入游戏",
+    joining: "正在加入...",
+    connectingBtn: "正在连接...",
+    reconnectAs: (name) => `以 ${name} 身份重连`,
+    resetState: "重置所有服务器状态",
+    level: "级别",
+    teamLevel: (val) => `级别 ${val}`,
+    teamInfo: (id, val) => `队伍 ${id}: 级别 ${val}`,
+    startGame: "开始游戏",
+    resetTable: "重置牌局",
+    tributing: "正在进贡...",
+    returningTribute: "正在还贡...",
+    gameLog: "游戏日志",
+    playCards: "出牌",
+    pass: "过牌",
+    returnCard: "还贡所选牌",
+    gameOver: "游戏结束",
+    nextRound: "下一局",
+    rank: (val) => `第 ${val} 名`,
+    cardsCount: (val) => `${val} 张牌`,
+    offline: "离线",
+    acting: "执行中...",
+    you: "(你)",
+    playSuccess: "出牌成功",
+    selectOne: "请选择恰好一张牌还贡",
+    someonePlay: (name) => `${name} 的出牌`,
+    wild: "百搭",
+    resistance: "抗贡！由于拥有两张大王，进贡取消"
+  }
+};
+
+const translateLog = (msg, lang) => {
+  if (lang === 'en') return msg;
+  return msg
+    .replace(/joined the table\./g, "加入了房间。")
+    .replace(/Game started!/g, "游戏开始！")
+    .replace(/Team (\d) is level (\w+)/g, "队伍 $1 级别为 $2")
+    .replace(/Team (\d) double win! Level up 3\./g, "队伍 $1 双红！级别上升 3 级。")
+    .replace(/Team (\d) took 1st and 3rd! Level up 2\./g, "队伍 $1 获得第一和第三！级别上升 2 级。")
+    .replace(/Team (\d) took 1st and 4th! Level up 1\./g, "队伍 $1 获得第一和第四！级别上升 1 级。")
+    .replace(/tributed (.*?) to (.*?)/g, "向 $2 进贡了 $1")
+    .replace(/returned a card to (.*?)/g, "向 $1 还贡了")
+    .replace(/RESISTANCE! Tribute cancelled due to 2 Big Jokers\./g, "抗贡！由于拥有两张大王，进贡取消。")
+    .replace(/finished in (\d)(\w+) place!/g, "获得了第 $1 名！")
+    .replace(/Game Over!/g, "游戏结束！")
+    .replace(/passed\./g, "过牌。")
+    .replace(/played: /g, "打了：")
+    .replace(/WINS THE MATCH!/g, "赢得了比赛！")
+    .replace(/failed Level A 3 times\. Reset to Level 2\./g, "打 A 失败 3 次，重置为级别 2。")
+    .replace(/Rank 1/g, "第一名")
+    .replace(/Rank 2/g, "第二名")
+    .replace(/Rank 3/g, "第三名")
+    .replace(/Rank 4/g, "第四名");
+};
+
 function App() {
+  const [language, setLanguage] = useState(localStorage.getItem('guandan_lang') || 'en');
+  const t = (key, ...args) => {
+    const val = translations[language][key];
+    return typeof val === 'function' ? val(...args) : val;
+  };
+
+  useEffect(() => {
+    localStorage.setItem('guandan_lang', language);
+  }, [language]);
+
   const [roomId, setRoomId] = useState('main');
   const [playerName, setPlayerName] = useState('');
   const [joined, setJoined] = useState(false);
@@ -148,7 +261,7 @@ function App() {
   };
 
   const returnTribute = () => {
-    if (selectedCards.length !== 1) return alert('Select exactly one card to return');
+    if (selectedCards.length !== 1) return alert(language === 'cn' ? translations.cn.selectOne : translations.en.selectOne);
     socket.emit('return_tribute', { roomId, cardIndex: selectedCards[0] });
     setSelectedCards([]);
   };
@@ -156,35 +269,41 @@ function App() {
   if (!joined) {
     return (
       <div className="lobby-container">
+        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 2000 }}>
+          <button className="btn-secondary" onClick={() => setLanguage(language === 'en' ? 'cn' : 'en')} style={{ padding: '8px 15px', backdropFilter: 'blur(5px)' }}>
+            {language === 'en' ? '中文' : 'English'}
+          </button>
+        </div>
+
         <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', minWidth: '350px' }}>
-          <h1 style={{ color: '#1a1a1a' }}>GUANDAN 掼蛋</h1>
-          <p style={{ color: '#444' }}>Multiplayer Strategy Card Game</p>
+          <h1 style={{ color: '#1a1a1a' }}>{t('title')}</h1>
+          <p style={{ color: '#444' }}>{t('subtitle')}</p>
           
           <div style={{ marginBottom: '20px', textAlign: 'left', padding: '15px', background: 'rgba(0,0,0,0.05)', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: 'var(--accent)' }}>Room Status ({roomInfo?.players?.length || 0}/4)</h3>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: 'var(--accent)' }}>{t('roomStatus')} ({roomInfo?.players?.length || 0}/4)</h3>
             {roomInfo && roomInfo.players && roomInfo.players.length > 0 ? (
                 roomInfo.players.map(p => (
                     <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'center', color: '#1a1a1a' }}>
-                        <span>{p.name} <span style={{ fontSize: '12px', opacity: 0.7 }}>{p.connected ? '(Online)' : '(Offline)'}</span></span>
+                        <span>{p.name} <span style={{ fontSize: '12px', opacity: 0.7 }}>{p.connected ? `(${t('serverConnected')})` : `(${t('offline')})`}</span></span>
                         {!p.connected && (
-                            <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px' }} onClick={() => socket.emit('reconnect_player', { roomId, playerId: p.id })}>Reconnect</button>
+                            <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px' }} onClick={() => socket.emit('reconnect_player', { roomId, playerId: p.id })}>{t('reconnect')}</button>
                         )}
                     </div>
                 ))
             ) : (
-                <div style={{ opacity: 0.7, fontSize: '14px', color: '#1a1a1a' }}>Room is empty awaiting players.</div>
+                <div style={{ opacity: 0.7, fontSize: '14px', color: '#1a1a1a' }}>{t('roomEmpty')}</div>
             )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center' }}>
             <div id="connection-status" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', opacity: 0.8, color: '#1a1a1a' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? '#4ade80' : '#f87171', boxShadow: isConnected ? '0 0 10px #4ade80' : 'none' }}></div>
-                {isConnected ? 'Server Connected' : 'Connecting to Server...'}
+                {isConnected ? t('serverConnected') : t('connecting')}
             </div>
             
             <input 
                 type="text" 
-                placeholder="Your Name" 
+                placeholder={t('yourName')} 
                 value={playerName} 
                 onChange={e => setPlayerName(e.target.value)} 
                 style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd', width: '240px', fontSize: '16px', color: '#1a1a1a' }}
@@ -201,7 +320,7 @@ function App() {
                             onClick={() => { setIsJoining(true); socket.emit('reconnect_player', { roomId, playerId: match.id }); }}
                             disabled={isJoining || !isConnected}
                         >
-                            {isJoining ? 'Connecting...' : `Reconnect as ${match.name}`}
+                            {isJoining ? t('joining') : t('reconnectAs', match.name)}
                         </button>
                     );
                 }
@@ -210,19 +329,19 @@ function App() {
                         className="btn-primary" 
                         style={{ width: '264px', justifyContent: 'center', opacity: !isConnected ? 0.5 : 1 }} 
                         onClick={() => { 
-                            if (!playerName) return alert('Enter name'); 
+                            if (!playerName) return alert(language === 'cn' ? '请输入名字' : 'Enter name'); 
                             setIsJoining(true); 
                             socket.emit('join_room', { roomId, playerName }); 
                         }}
                         disabled={isJoining || !isConnected}
                     >
-                        {isJoining ? 'Joining...' : 'Join Table'}
+                        {isJoining ? t('joining') : t('joinTable')}
                     </button>
                 );
             })()}
 
             <button className="btn-secondary reset-btn" onClick={() => socket.emit('reset_room', roomId)}>
-                <Icons.Trash2 size={16}/> Reset All Server State
+                <Icons.Trash2 size={16}/> {t('resetState')}
             </button>
           </div>
         </div>
@@ -241,18 +360,21 @@ function App() {
       {/* HUD */}
       <div className="glass-panel" style={{ padding: '15px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1000 }}>
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            <h2 style={{ margin: 0, fontSize: '20px', color: 'white' }}>GUANDAN</h2>
-            <div className="glass-panel" style={{ padding: '4px 12px', borderRadius: '8px', color: 'white' }}>Level <strong>{gameState?.currentLevel}</strong></div>
+            <h2 style={{ margin: 0, fontSize: '20px', color: 'white' }}>{t('title')}</h2>
+            <div className="glass-panel" style={{ padding: '4px 12px', borderRadius: '8px', color: 'white' }}>{t('level')} <strong>{gameState?.currentLevel}</strong></div>
             <div style={{ fontSize: '12px', opacity: 0.8, color: 'white' }}>
-                Team 0: Level {gameState?.teamLevels[0]} | Team 1: Level {gameState?.teamLevels[1]}
+                {t('teamInfo', 0, gameState?.teamLevels[0])} | {t('teamInfo', 1, gameState?.teamLevels[1])}
             </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className="btn-secondary" onClick={() => setLanguage(language === 'en' ? 'cn' : 'en')} style={{ border: '1px solid rgba(255,255,255,0.2)' }}>
+            {language === 'en' ? '中文' : 'English'}
+          </button>
           {gameState?.state === 'LOBBY' && gameState.players.length === 4 && (
-            <button className="btn-primary" onClick={() => socket.emit('start_game', roomId)}><Icons.Play size={18}/> Start Game</button>
+            <button className="btn-primary" onClick={() => socket.emit('start_game', roomId)}><Icons.Play size={18}/> {t('startGame')}</button>
           )}
           <button className="btn-secondary reset-btn" style={{ marginTop: 0 }} onClick={() => socket.emit('reset_room', roomId)}>
-             <Icons.RotateCcw size={16}/> Reset Table
+             <Icons.RotateCcw size={16}/> {t('resetTable')}
           </button>
         </div>
       </div>
@@ -260,15 +382,15 @@ function App() {
       <div className="table-area">
         {/* Turn Indicator */}
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 100 }}>
-            {gameState?.state === 'TRIBUTE' && <div className="turn-indicator">TRIBUTING...</div>}
-            {gameState?.state === 'RETURN_TRIBUTE' && <div className="turn-indicator">RETURNING TRIBUTE...</div>}
+            {gameState?.state === 'TRIBUTE' && <div className="turn-indicator">{t('tributing')}</div>}
+            {gameState?.state === 'RETURN_TRIBUTE' && <div className="turn-indicator">{t('returningTribute')}</div>}
         </div>
 
         {/* Game Log */}
         <div id="game-log" style={{position: 'absolute', top: '10px', right: '10px', width: '250px', background: 'rgba(0,0,0,0.6)', borderRadius: '8px', padding: '10px', fontSize: '11px', maxHeight: '150px', overflowY: 'auto', zIndex: 50, color: 'white'}}>
-           <div style={{fontWeight: 'bold', marginBottom: '5px', color: 'var(--accent)'}}>Game Log</div>
+           <div style={{fontWeight: 'bold', marginBottom: '5px', color: 'var(--accent)'}}>{t('gameLog')}</div>
            <div className="log-entries">
-               {[...(gameState?.log || [])].reverse().map((msg, i) => <div key={i} style={{opacity: 0.8, marginBottom: '2px'}}>{msg}</div>)}
+               {[...(gameState?.log || [])].reverse().map((msg, i) => <div key={i} style={{opacity: 0.8, marginBottom: '2px'}}>{translateLog(msg, language)}</div>)}
            </div>
         </div>
 
@@ -280,12 +402,12 @@ function App() {
                 <div key={p.id} className={`player-box ${p.position} ${p.isActive ? 'active' : ''}`} style={{ opacity: p.connected ? 1 : 0.5 }}>
                     <div className="avatar-icon" style={{ color: 'white' }}><Icon size={32}/></div>
                     <div style={{ fontWeight: 800, color: 'white', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-                      {p.name} {isMe ? '(You)' : ''}
+                      {p.name} {isMe ? t('you') : ''}
                     </div>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: '#4ade80' }}>
-                        {p.winRank ? `Rank ${p.winRank}` : (p.connected ? `${p.cardCount} cards` : 'Offline')}
+                        {p.winRank ? t('rank', p.winRank) : (p.connected ? t('cardsCount', p.cardCount) : t('offline'))}
                     </div>
-                    {p.isActive && <div className="turn-indicator" style={{ position: 'static', fontSize: '12px', padding: '4px 8px', marginTop: '5px' }}>ACTING...</div>}
+                    {p.isActive && <div className="turn-indicator" style={{ position: 'static', fontSize: '12px', padding: '4px 8px', marginTop: '5px' }}>{t('acting')}</div>}
                 </div>
             )
         })}
@@ -295,10 +417,10 @@ function App() {
           <div className="last-play-area">
             <div className="last-play-indicator">
               <div className="last-play-label">
-                {gameState.players.find(p => p.id === gameState.lastPlay.playerId)?.name || 'Someone'}'s Play
+                {t('someonePlay', gameState.players.find(p => p.id === gameState.lastPlay.playerId)?.name || 'Someone')}
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
-                {gameState.lastPlay.cards.map((c, i) => <Card key={i} card={c} small currentLevel={gameState.currentLevel} />)}
+                {gameState.lastPlay.cards.map((c, i) => <Card key={i} card={c} small currentLevel={gameState.currentLevel} t={t} />)}
               </div>
             </div>
           </div>
@@ -316,6 +438,7 @@ function App() {
                 selected={selectedCards.includes(index)} 
                 onClick={() => toggleCard(index)}
                 currentLevel={gameState?.currentLevel}
+                t={t}
               />
             ))}
           </div>
@@ -326,14 +449,14 @@ function App() {
       <div style={{ position: 'fixed', bottom: '40px', right: '40px', display: 'flex', flexDirection: 'column', gap: '15px', zIndex: 1000 }}>
         {gameState?.turn !== undefined && gameState.players[gameState.turn]?.socketId === socket.id && gameState.state === 'PLAYING' && (
             <>
-                <button className="btn-primary" style={{ padding: '20px 40px', fontSize: '20px' }} onClick={playCards}><Icons.Send size={24}/> Play Cards</button>
-                <button className="btn-secondary" style={{ padding: '15px', fontSize: '18px' }} onClick={() => { socket.emit('play_cards', { roomId, cardIndices: [] }); setSelectedCards([]); }}>Pass</button>
+                <button className="btn-primary" style={{ padding: '20px 40px', fontSize: '20px' }} onClick={playCards}><Icons.Send size={24}/> {t('playCards')}</button>
+                <button className="btn-secondary" style={{ padding: '15px', fontSize: '18px' }} onClick={() => { socket.emit('play_cards', { roomId, cardIndices: [] }); setSelectedCards([]); }}>{t('pass')}</button>
             </>
         )}
         
         {isMyTributeTurn && (
             <button className="btn-primary" style={{ padding: '20px 40px', fontSize: '20px', background: '#3b82f6' }} onClick={returnTribute}>
-                <Icons.Repeat size={24}/> Return Selected Card
+                <Icons.Repeat size={24}/> {t('returnCard')}
             </button>
         )}
       </div>
@@ -341,26 +464,26 @@ function App() {
       {/* Finished State Overlay */}
       {gameState?.state === 'FINISHED' && (
         <div className="finished-overlay glass-panel" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10000, padding: '40px', background: 'rgba(255,255,255,0.95)', textAlign: 'center', minWidth: '400px', border: '5px solid var(--accent)' }}>
-          <h1 style={{ color: '#ef4444', marginBottom: '20px', fontSize: '48px' }}>GAME OVER</h1>
+          <h1 style={{ color: '#ef4444', marginBottom: '20px', fontSize: '48px' }}>{t('gameOver')}</h1>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {gameState.winners.map((wid, idx) => {
                 const p = gameState.players.find(p => p.id === wid);
                 return (
                     <div key={wid} style={{ fontSize: '24px', fontWeight: 800, color: '#1a1a1a', display: 'flex', justifyContent: 'space-between', padding: '10px', background: idx === 0 ? '#fef3c7' : 'transparent', borderRadius: '8px' }}>
-                        <span>Rank {idx + 1}</span>
+                        <span>{t('rank', idx + 1)}</span>
                         <span>{p?.name}</span>
                     </div>
                 );
               })}
           </div>
-          <button className="btn-primary" style={{ margin: '30px auto 0', padding: '15px 40px' }} onClick={() => socket.emit('start_game', roomId)}>Next Round</button>
+          <button className="btn-primary" style={{ margin: '30px auto 0', padding: '15px 40px' }} onClick={() => socket.emit('start_game', roomId)}>{t('nextRound')}</button>
         </div>
       )}
     </div>
   );
 }
 
-function Card({ card, selected, onClick, small, currentLevel }) {
+function Card({ card, selected, onClick, small, currentLevel, t }) {
   const isRed = ['H', 'D'].includes(card.suit);
   const isJoker = card.rank === 'BJ' || card.rank === 'SJ';
   const colorClass = card.rank === 'BJ' ? 'red' : card.rank === 'SJ' ? 'gray' : isRed ? 'red' : 'black';
@@ -393,7 +516,7 @@ function Card({ card, selected, onClick, small, currentLevel }) {
       </div>
 
       {card.suit === 'H' && card.rank === currentLevel && (
-          <div style={{ position: 'absolute', bottom: '5px', right: '5px', fontSize: '10px', color: 'gold' }}>WILD</div>
+          <div style={{ position: 'absolute', bottom: '5px', right: '5px', fontSize: '10px', color: 'gold' }}>{t('wild')}</div>
       )}
     </div>
   );
