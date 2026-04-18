@@ -144,6 +144,22 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('return_tribute', ({ roomId, cardIndex }) => {
+        const game = games[roomId];
+        const mapping = socketMap[socket.id];
+        if (game && mapping) {
+            const result = game.returnTribute(mapping.playerId, cardIndex);
+            if (result.success) {
+                io.to(roomId).emit('game_update', game.getState());
+                game.players.forEach(p => {
+                    if (p.socketId) io.to(p.socketId).emit('private_hand', p.hand);
+                });
+            } else {
+                socket.emit('error', result.error);
+            }
+        }
+    });
+
     socket.on('reset_room', (roomId) => {
         if (games[roomId]) {
             games[roomId] = new Game(roomId);

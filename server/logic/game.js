@@ -302,7 +302,23 @@ class Game {
             const placeStr = placement === 1 ? '1st' : placement === 2 ? '2nd' : '3rd';
             this.addLog(`🎉 ${player.name} finished in ${placeStr} place!`);
             
-            if (this.winners.length === 3) {
+            // Check for Double Win (Early End)
+            if (this.winners.length === 2) {
+                const p1 = this.players.find(p => p.id === this.winners[0]);
+                const p2 = this.players.find(p => p.id === this.winners[1]);
+                if (p1.team === p2.team) {
+                    this.addLog(`🎊 Team ${p1.team} takes 1st and 2nd! DOUBLE WIN!`);
+                    // Automatically add remaining players to winners list based on hand size
+                    const losers = this.players
+                        .filter(p => !this.winners.includes(p.id))
+                        .sort((a,b) => a.hand.length - b.hand.length);
+                    this.winners.push(...losers.map(p => p.id));
+                    this.state = 'FINISHED';
+                    this.addLog('Game Over (Early Finish)!');
+                }
+            }
+
+            if (this.state !== 'FINISHED' && this.winners.length === 3) {
                 const lastPlayer = this.players.find(p => !this.winners.includes(p.id));
                 this.winners.push(lastPlayer.id);
                 this.state = 'FINISHED';

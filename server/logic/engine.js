@@ -140,14 +140,15 @@ function analyzeCombo(cards, currentLevel) {
             }
         }
 
-        // Tube (3 consecutive pairs = 6 cards)
-        if (n === 6) {
-           if (checkConsecutive(naturalRanks, wildCount, 3, 2)) {
-               return { type: COMBO_TYPES.TUBE, value: Math.max(...naturalRanks) + wildCount };
+        // Tube (Consecutive pairs, 3+ pairs)
+        if (n >= 6 && n % 2 === 0) {
+           const pairsCount = n / 2;
+           if (checkConsecutive(naturalRanks, wildCount, pairsCount, 2)) {
+               return { type: COMBO_TYPES.TUBE, value: Math.max(...naturalRanks) + wildCount, size: n };
            }
         }
 
-        // Plate (2 consecutive triples = 6 cards)
+        // Plate (Steel Plate, exactly 2 consecutive triples = 6 cards)
         if (n === 6) {
             if (checkConsecutive(naturalRanks, wildCount, 2, 3)) {
                 return { type: COMBO_TYPES.PLATE, value: Math.max(...naturalRanks) + wildCount };
@@ -166,9 +167,10 @@ function checkConsecutive(sortedRanks, wildCount, length, countPerRank) {
     const freqs = {};
     sortedRanks.forEach(r => freqs[r] = (freqs[r] || 0) + 1);
     
-    // Rank values from 2 (val: 5) to A (val: 17)
-    const minVal = 5; 
-    const maxVal = 17;
+    // Guandan sequences: 2-3-4-5-6 up to 10-J-Q-K-A
+    // Rank values (natural) from 2 ('2') to 14 ('A')
+    const minVal = 2; 
+    const maxVal = 14;
 
     for (let start = minVal; start <= maxVal - length + 1; start++) {
         let neededWilds = 0;
