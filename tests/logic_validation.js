@@ -31,17 +31,17 @@ async function runTests() {
     game.state = 'PLAYING';
     
     // Simulate Team 0 (p1, p3) taking 1st and 2nd
-    game.winners = ['p1', 'p3'];
-    // Trigger double win check by finishing a play
-    game.players[0].hand = []; 
-    const result = game.play('p1', []); // dummy play to trigger check or direct winners check
-    // Actually our logic triggers on winning the game in play()
-    // Let's re-run correctly:
     console.log("Setting up double win scenario...");
+    // Give everyone some cards to prevent infinite loops in nextTurn
+    game.players.forEach(p => p.hand = [{suit: 'S', rank: '2'}]);
+    
     game.winners = ['p1'];
-    game.players[2].hand = [{suit: 'S', rank: 'A'}]; // p3 has 1 card
+    game.players[0].hand = []; // p1 already finished
+    game.players[2].hand = [{suit: 'S', rank: 'A'}]; // p3 has 1 card left
     game.turn = 2; // p3 turn
+    console.log("Calling game.play('p3', [0])...");
     game.play('p3', [0]); // p3 plays last card
+    console.log("game.play('p3', [0]) finished.");
     
     console.log("Game state after p1, p3 win:", game.state);
     console.log("Is finished?", game.state === 'FINISHED' ? '✅ PASS' : '❌ FAIL');
@@ -70,6 +70,10 @@ async function runTests() {
     console.log("Card transferred to loser?", tGame.players[1].hand.some(c => c.rank === '10') ? '✅ PASS' : '❌ FAIL');
 
     console.log("\n--- Logic Validation Complete ---");
+    process.exit(0);
 }
 
-runTests().catch(console.error);
+runTests().catch(err => {
+    console.error("TEST HUNG OR FAILED:", err);
+    process.exit(1);
+});

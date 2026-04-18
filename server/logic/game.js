@@ -335,13 +335,16 @@ class Game {
         const previousLeadId = this.lastPlay ? this.lastPlay.playerId : null;
         this.turn = (this.turn + 1) % 4;
         
-        while (this.players[this.turn].hand.length === 0) {
+        let attempts = 0;
+        while (this.players[this.turn].hand.length === 0 && attempts < 4) {
             if (previousLeadId && this.players[this.turn].id === previousLeadId) {
                 this.lastPlay = null;
                 this.turn = (this.turn + 2) % 4;
+                attempts++;
                 continue; 
             }
             this.turn = (this.turn + 1) % 4;
+            attempts++;
         }
 
         if (this.lastPlay && this.players[this.turn].id === this.lastPlay.playerId) {

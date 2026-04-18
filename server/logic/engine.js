@@ -123,13 +123,17 @@ function analyzeCombo(cards, currentLevel) {
     // Multi-set analysis (Straights, Tubes, Plates)
     if (n >= 5) {
         // Use NATURAL values for sequence detection
-        const naturalRanks = distinctRanks.map(r => getNaturalRankValue(r)).sort((a,b) => a-b);
+        const naturalFreqs = {};
+        for (let rank in freqs) {
+            naturalFreqs[getNaturalRankValue(rank)] = freqs[rank];
+        }
+        const naturalRanks = Object.keys(naturalFreqs).map(Number).sort((a,b) => a-b);
         
         // Straight (5 cards)
         if (n === 5) {
             // Check for Straight Flush first
             const isSameSuit = normalCards.length > 0 && normalCards.every(c => c.suit === normalCards[0].suit);
-            const canBeStraight = checkConsecutive(naturalRanks, wildCount, 5, 1);
+            const canBeStraight = checkConsecutive(naturalFreqs, wildCount, 5, 1);
             if (canBeStraight) {
                 // Find natural value of the highest card in the straight
                 const val = Math.max(...naturalRanks) + wildCount;
@@ -143,14 +147,14 @@ function analyzeCombo(cards, currentLevel) {
         // Tube (Consecutive pairs, 3+ pairs)
         if (n >= 6 && n % 2 === 0) {
            const pairsCount = n / 2;
-           if (checkConsecutive(naturalRanks, wildCount, pairsCount, 2)) {
+           if (checkConsecutive(naturalFreqs, wildCount, pairsCount, 2)) {
                return { type: COMBO_TYPES.TUBE, value: Math.max(...naturalRanks) + wildCount, size: n };
            }
         }
 
         // Plate (Steel Plate, exactly 2 consecutive triples = 6 cards)
         if (n === 6) {
-            if (checkConsecutive(naturalRanks, wildCount, 2, 3)) {
+            if (checkConsecutive(naturalFreqs, wildCount, 2, 3)) {
                 return { type: COMBO_TYPES.PLATE, value: Math.max(...naturalRanks) + wildCount };
             }
         }
@@ -159,13 +163,7 @@ function analyzeCombo(cards, currentLevel) {
     return null;
 }
 
-function checkConsecutive(sortedRanks, wildCount, length, countPerRank) {
-    // Guandan sequences: 2-3-4-5-6 up to 10-J-Q-K-A
-    // Level cards and Jokers are generally NOT allowed in sequences.
-    
-    // Create a frequency map for quick lookup
-    const freqs = {};
-    sortedRanks.forEach(r => freqs[r] = (freqs[r] || 0) + 1);
+function checkConsecutive(freqs, wildCount, length, countPerRank) {
     
     // Guandan sequences: 2-3-4-5-6 up to 10-J-Q-K-A
     // Rank values (natural) from 2 ('2') to 14 ('A')
