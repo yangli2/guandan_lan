@@ -7,12 +7,10 @@ echo "Checking Node.js version..."
 node -v
 
 echo "Installing Backend dependencies (server/)..."
-cd server && npm install
-cd ..
+(cd server && npm install)
 
 echo "Installing Frontend dependencies (client/)..."
-cd client && npm install
-cd ..
+(cd client && npm install)
 
 echo "--------------------------------------------------"
 echo "Done! You can now run ./start.sh to begin."

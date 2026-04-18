@@ -5,15 +5,13 @@ echo "--- Starting Guandan Multiplayer ---"
 
 # Start the backend server in the background
 echo "Starting Backend on port 3001..."
-cd server && npm start &
+(cd server && npm start) &
 BACKEND_PID=$!
-cd ..
 
 # Start the frontend server in the background
 echo "Starting Frontend on port 5173 (LAN access enabled)..."
-cd client && npm run dev &
+(cd client && npm run dev) &
 FRONTEND_PID=$!
-cd ..
 
 echo "--------------------------------------------------"
 echo "--- Servers are running ---"
