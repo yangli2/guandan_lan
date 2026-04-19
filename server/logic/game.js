@@ -167,7 +167,7 @@ class Game {
             this.state = 'RETURN_TRIBUTE';
             this.turn = this.players.indexOf(first);
 
-            if (process.env.E2E_SHORT_GAME === '1') {
+            if (process.env.E2E_SHORT_GAME === '1' && process.env.E2E_AUTO_TRIBUTE === '1') {
                 this.addLog("E2E MODE: Automating return tribute...");
                 const actions = [...this.tributeInfo.tributes];
                 actions.forEach(t => {
