@@ -5,6 +5,8 @@ const { v4: uuidv4 } = require('uuid');
 class Game {
     constructor(roomId) {
         this.id = roomId || uuidv4();
+        this.roundId = this.id + '-' + uuidv4();
+        this.sequenceNumber = 0;
         this.players = []; // { id, name, socketId, hand, team }
         this.state = 'LOBBY';
         
@@ -23,11 +25,20 @@ class Game {
         this.tributeInfo = null; // { from: [], to: [], resistance: boolean }
     }
 
+    /**
+     * Adds a message to the game log.
+     * @param {string} msg 
+     */
     addLog(msg) {
         this.log.push(`[${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})}] ` + msg);
         if (this.log.length > 50) this.log.shift();
     }
 
+    /**
+     * Adds a player to the game room.
+     * @param {Object} player - The player object {id, name, socketId, icon}
+     * @returns {boolean} True if joined successfully.
+     */
     join(player) {
         if (this.players.length < 4) {
             player.team = this.players.length % 2;
@@ -40,6 +51,10 @@ class Game {
         return false;
     }
 
+    /**
+     * Starts the game or moves to the next round.
+     * @returns {boolean} True if started successfully.
+     */
     start() {
         if (this.players.length !== 4) return false;
         
@@ -51,6 +66,8 @@ class Game {
         }
 
         this.state = 'PLAYING';
+        this.roundId = this.id + '-' + uuidv4();
+        this.sequenceNumber = 0;
         this.deal();
         this.winners = [];
         this.lastPlay = null;
@@ -68,6 +85,9 @@ class Game {
         return true;
     }
 
+    /**
+     * Calculates level advancement and penalties based on the previous round's winners.
+     */
     processEndGame() {
         const firstWinner = this.players.find(p => p.id === this.winners[0]);
         const secondWinner = this.players.find(p => p.id === this.winners[1]);
@@ -118,6 +138,10 @@ class Game {
         this.currentTeamTurn = winTeam;
     }
 
+    /**
+     * Sets up the tribute phase based on the previous round's winners.
+     * @param {string[]} oldWinnerIds - The IDs of players who finished in order.
+     */
     setupTribute(oldWinnerIds) {
         const first = this.players.find(p => p.id === oldWinnerIds[0]);
         const second = this.players.find(p => p.id === oldWinnerIds[1]);
@@ -177,10 +201,20 @@ class Game {
         }
     }
 
+    /**
+     * Records a tribute action.
+     * @param {Object} fromPlayer - The player giving the tribute.
+     * @param {Object} toPlayer - The player receiving the tribute.
+     */
     addTributeAction(fromPlayer, toPlayer) {
         this.tributeInfo.tributes.push({ from: fromPlayer, to: toPlayer });
     }
 
+    /**
+     * Finds the highest value card in a player's hand for tribute.
+     * @param {Object} player - The player to analyze.
+     * @returns {{index: number, card: Object}} The index and the card.
+     */
     findHighestTributeCard(player) {
         // Standard sorting, find max
         let maxVal = -1;
@@ -195,6 +229,11 @@ class Game {
         return { index: maxIdx, card: player.hand[maxIdx] };
     }
 
+    /**
+     * Calculates the value of a card for tribute purposes.
+     * @param {Object} card - The card to evaluate.
+     * @returns {number} The tribute value.
+     */
     getTributeValue(card) {
         if (card.rank === 'BJ') return 100;
         if (card.rank === 'SJ') return 90;
@@ -203,10 +242,16 @@ class Game {
         return RANKS.indexOf(card.rank);
     }
 
+    /**
+     * Handles the return of a tribute card from a winner to a loser.
+     * @param {string} playerId - The ID of the winner returning the card.
+     * @param {number} cardIndex - The index of the card in the winner's hand.
+     * @returns {{error: string}|{success: boolean}} Result of the operation.
+     */
     returnTribute(playerId, cardIndex) {
         if (this.state !== 'RETURN_TRIBUTE') return { error: "Not tribute phase" };
         const winner = this.players.find(p => p.id === playerId);
-        const action = this.tributeInfo.tributes.find(t => t.to.id === playerId);
+        const action = this.tributeInfo.tributes.find(t => t.to.id === playerId && !t.done);
         
         if (!action) return { error: "You don't owe a return" };
         
@@ -215,6 +260,7 @@ class Game {
         
         winner.hand.splice(cardIndex, 1);
         action.from.hand.push(card);
+        action.done = true;
         this.addLog(`${winner.name} returned a card to ${action.from.name}`);
         
         // Check if all returns done
@@ -224,9 +270,12 @@ class Game {
             this.state = 'PLAYING';
             this.tributeInfo = null;
         }
-        return { success: true };
+        return { success: true, card };
     }
 
+    /**
+     * Deals cards to all players. Supports E2E short game mode.
+     */
     deal() {
         const level = this.teamLevels[this.currentTeamTurn];
         if (process.env.E2E_SHORT_GAME === '1') {
@@ -263,6 +312,12 @@ class Game {
         });
     }
 
+    /**
+     * Handles a player's move. Can be a card play or a tribute return.
+     * @param {string} playerId - The ID of the player making the move.
+     * @param {number[]} cardIndices - The indices of the cards to play.
+     * @returns {{error: string}|{success: boolean, type: string, combo?: Object}} Result of the play.
+     */
     play(playerId, cardIndices) {
         if (this.state === 'RETURN_TRIBUTE') {
             return this.returnTribute(playerId, cardIndices[0]);
@@ -274,15 +329,14 @@ class Game {
         const player = this.players[playerIdx];
         const cards = cardIndices.map(i => player.hand[i]);
         
-        const level = this.teamLevels[player.team];
-
-        if (cards.length === 0) {
+        if (cardIndices.length === 0) {
             this.addLog(`${player.name} passed.`);
             this.nextTurn();
             return { success: true, type: 'PASS' };
         }
 
-        const combo = analyzeCombo(cards, level);
+        const currentLevel = this.teamLevels[this.currentTeamTurn];
+        const combo = analyzeCombo(cards, currentLevel);
         if (!combo) return { error: "Invalid combination" };
 
         if (!compareCombos(this.lastPlay ? this.lastPlay.combo : null, combo)) {
@@ -330,6 +384,9 @@ class Game {
         return { success: true, type: 'PLAY', combo };
     }
 
+    /**
+     * Advances the turn to the next eligible player.
+     */
     nextTurn() {
         if (this.state !== 'PLAYING') return;
         const previousLeadId = this.lastPlay ? this.lastPlay.playerId : null;
@@ -352,14 +409,21 @@ class Game {
         }
     }
 
+    /**
+     * Returns a serializable snapshot of the current game state.
+     * @returns {Object} The game state.
+     */
     getState() {
         return {
             id: this.id,
+            roundId: this.roundId,
+            sequenceNumber: this.sequenceNumber,
             state: this.state,
             teamLevels: this.teamLevels,
             currentLevel: this.teamLevels[this.currentTeamTurn],
             turn: this.turn,
             lastPlay: this.lastPlay,
+            playedHistory: this.playedHistory,
             winners: this.winners,
             log: this.log,
             tributeInfo: this.tributeInfo ? {

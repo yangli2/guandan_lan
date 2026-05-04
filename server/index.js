@@ -5,7 +5,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
-const Game = require('./logic/game');
+const RoomManager = require('./logic/RoomManager');
 
 const AVATARS = ['User', 'Smile', 'Ghost', 'Rocket', 'Crown', 'Star', 'Heart', 'Anchor', 'Compass', 'Gift'];
 
@@ -21,45 +21,57 @@ const io = new Server(server, {
 });
 
 const PORT = 3001;
-const LOG_DIR = path.join(__dirname, 'logs');
+let LOG_DIR = path.join(__dirname, 'logs');
+const logDirIndex = process.argv.indexOf('--log-dir');
+if (logDirIndex !== -1 && process.argv[logDirIndex + 1]) {
+    LOG_DIR = path.resolve(process.cwd(), process.argv[logDirIndex + 1]);
+}
 const CONTROL_IN = path.join(__dirname, 'control_in.json');
 const CONTROL_OUT = path.join(__dirname, 'control_out.json');
 
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
-
-let games = {}; // roomId -> Game instance
+const roomManager = new RoomManager(LOG_DIR);
 let socketMap = {}; // socketId -> { roomId, playerId }
 
-// Session Logging Helper
-function logSession(gameId, data) {
-    const logFile = path.join(LOG_DIR, `session_${gameId}.json`);
-    let history = [];
-    if (fs.existsSync(logFile)) {
-        history = JSON.parse(fs.readFileSync(logFile));
+function notifyGameState(roomId) {
+    const game = roomManager.getGame(roomId);
+    if (game) {
+        io.to(roomId).emit('game_update', game.getState());
+        game.players.forEach(p => {
+            if (p.socketId) io.to(p.socketId).emit('private_hand', p.hand);
+        });
     }
-    history.push({ timestamp: new Date(), ...data });
-    fs.writeFileSync(logFile, JSON.stringify(history, null, 2));
+}
+
+function maybeAutoStartGame(game, roomId) {
+    if (game.players.length === 4 && game.state === 'LOBBY') {
+        if (game.start()) {
+            roomManager.logSession(roomId, { event: 'game_started_auto' });
+            notifyGameState(roomId);
+            return true;
+        }
+    }
+    return false;
+}
+
+function checkAutoRestartGame(game, roomId) {
+    if (game.state === 'FINISHED') {
+        setTimeout(() => {
+            if (game.start()) {
+                roomManager.logSession(roomId, { event: 'game_started_auto_next_round' });
+                notifyGameState(roomId);
+            }
+        }, 3000);
+    }
 }
 
 io.on('connection', (socket) => {
-    // Check if this socket matches a known mapping (reconnect case)
-    let knownPlayer = null;
-    if (socketMap[socket.id]) {
-        knownPlayer = socketMap[socket.id].playerId;
-    }
-    console.log(`User connected [${socket.id}]${knownPlayer ? ` - Recognized as player: ${knownPlayer}` : ' - New Session'}`);
-
     socket.on('get_room_info', (roomId) => {
-        const game = games[roomId];
-        if (game) {
-            socket.emit('room_info', game.getState());
-        } else {
-            socket.emit('room_info', null);
-        }
+        const game = roomManager.getGame(roomId);
+        socket.emit('room_info', game ? game.getState() : null);
     });
 
     socket.on('reconnect_player', ({ roomId, playerId }) => {
-        const game = games[roomId];
+        const game = roomManager.getGame(roomId);
         if (game) {
             const player = game.players.find(p => p.id === playerId);
             if (player) {
@@ -68,92 +80,57 @@ io.on('connection', (socket) => {
                 socketMap[socket.id] = { roomId, playerId };
                 socket.join(roomId);
                 socket.emit('join_success');
-                io.to(roomId).emit('game_update', game.getState());
-                socket.emit('private_hand', player.hand);
-                logSession(roomId, { event: 'player_reconnected', playerId });
+                roomManager.logSession(roomId, { event: 'player_reconnected', playerId });
+                notifyGameState(roomId);
             }
         }
     });
 
     socket.on('join_room', ({ roomId, playerName }) => {
-        console.log(`Join attempt: Room ${roomId}, Player: ${playerName}`);
-        if (!games[roomId]) {
-            games[roomId] = new Game(roomId);
-        }
-        const game = games[roomId];
         const randomIcon = AVATARS[Math.floor(Math.random() * AVATARS.length)];
         const player = { id: socket.id, name: playerName, socketId: socket.id, icon: randomIcon };
         
-        if (game.join(player)) {
+        const { success, game } = roomManager.joinRoom(roomId, player);
+        if (success) {
             socketMap[socket.id] = { roomId, playerId: socket.id };
             socket.join(roomId);
             socket.emit('join_success');
-            io.to(roomId).emit('game_update', game.getState());
-            logSession(roomId, { event: 'player_joined', playerName });
-            console.log(`Join success: ${playerName} in ${roomId}`);
+            if (!maybeAutoStartGame(game, roomId)) {
+                notifyGameState(roomId);
+            }
         } else {
             socket.emit('error', 'Room full');
-            console.warn(`Join failed: ${roomId} is full`);
         }
     });
 
     socket.on('start_game', (roomId) => {
-        const game = games[roomId];
+        const game = roomManager.getGame(roomId);
         if (game && game.start()) {
-            io.to(roomId).emit('game_update', game.getState());
-            // Send private hands
-            game.players.forEach(p => {
-                io.to(p.socketId).emit('private_hand', p.hand);
-            });
-            logSession(roomId, { event: 'game_started' });
+            roomManager.logSession(roomId, { event: 'game_started' });
+            notifyGameState(roomId);
         }
     });
 
     socket.on('play_cards', ({ roomId, cardIndices }) => {
-        const game = games[roomId];
         const mapping = socketMap[socket.id];
-        if (game && mapping) {
-            const result = game.play(mapping.playerId, cardIndices);
+        if (mapping) {
+            const result = roomManager.playCards(roomId, mapping.playerId, cardIndices);
             if (result.success) {
                 socket.emit('play_success');
-                io.to(roomId).emit('game_update', game.getState());
-                // Refresh hands
-                game.players.forEach(p => {
-                    io.to(p.socketId).emit('private_hand', p.hand);
-                });
-                logSession(roomId, { event: 'play', playerId: mapping.playerId, cardIndices, type: result.type });
+                notifyGameState(roomId);
+                checkAutoRestartGame(roomManager.getGame(roomId), roomId);
             } else {
                 socket.emit('error', result.error);
             }
         }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('return_tribute', ({ roomId, cardIndex }) => {
         const mapping = socketMap[socket.id];
         if (mapping) {
-            const game = games[mapping.roomId];
-            if (game) {
-                const player = game.players.find(p => p.id === mapping.playerId);
-                if (player) {
-                    player.connected = false;
-                    io.to(mapping.roomId).emit('game_update', game.getState());
-                    logSession(mapping.roomId, { event: 'player_disconnected', playerId: mapping.playerId });
-                }
-            }
-            delete socketMap[socket.id];
-        }
-    });
-
-    socket.on('return_tribute', ({ roomId, cardIndex }) => {
-        const game = games[roomId];
-        const mapping = socketMap[socket.id];
-        if (game && mapping) {
-            const result = game.returnTribute(mapping.playerId, cardIndex);
+            const result = roomManager.returnTribute(roomId, mapping.playerId, cardIndex);
             if (result.success) {
-                io.to(roomId).emit('game_update', game.getState());
-                game.players.forEach(p => {
-                    if (p.socketId) io.to(p.socketId).emit('private_hand', p.hand);
-                });
+                notifyGameState(roomId);
             } else {
                 socket.emit('error', result.error);
             }
@@ -161,119 +138,84 @@ io.on('connection', (socket) => {
     });
 
     socket.on('reset_room', (roomId) => {
-        if (games[roomId]) {
-            games[roomId] = new Game(roomId);
-            io.to(roomId).emit('game_update', games[roomId].getState());
-            io.to(roomId).emit('force_reload');
-            logSession(roomId, { event: 'room_reset' });
+        const game = roomManager.createRoom(roomId); // This is actually a bit weird, should have a resetRoom in roomManager
+        // For now, let's just re-instantiate if needed or add reset method
+        // Re-using createRoom for simplicity as it returns the existing or new one.
+        // Actually we need to FORCE a new one.
+        roomManager.games[roomId] = new (require('./logic/game'))(roomId);
+        roomManager.logSession(roomId, { event: 'room_reset' });
+        notifyGameState(roomId);
+        io.to(roomId).emit('force_reload');
+    });
+
+    socket.on('disconnect', () => {
+        const mapping = socketMap[socket.id];
+        if (mapping) {
+            const game = roomManager.getGame(mapping.roomId);
+            if (game) {
+                const player = game.players.find(p => p.id === mapping.playerId);
+                if (player) {
+                    player.connected = false;
+                    roomManager.logSession(mapping.roomId, { event: 'player_disconnected', playerId: mapping.playerId });
+                    notifyGameState(mapping.roomId);
+                }
+            }
+            delete socketMap[socket.id];
         }
     });
 });
 
-// Control Interface Watcher
+// Control Interface
 chokidar.watch(CONTROL_IN).on('change', () => {
     try {
         const content = fs.readFileSync(CONTROL_IN, 'utf8');
         if (!content) return;
         const cmd = JSON.parse(content);
-        console.log('Received command:', cmd);
-
         if (cmd.type === 'SERVER_PLAY') {
-            const game = games[cmd.roomId];
-            if (game) {
-                const player = game.players[game.turn];
-                const result = game.play(player.id, cmd.cardIndices);
-                if (result.success) {
-                    io.to(cmd.roomId).emit('game_update', game.getState());
-                    game.players.forEach(p => {
-                        io.to(p.socketId).emit('private_hand', p.hand);
-                    });
-                    logSession(cmd.roomId, { event: 'server_force_play', player: player.name, cardIndices: cmd.cardIndices });
-                }
-            }
+            const result = roomManager.playCards(cmd.roomId, roomManager.getGame(cmd.roomId).players[roomManager.getGame(cmd.roomId).turn].id, cmd.cardIndices);
+            if (result.success) notifyGameState(cmd.roomId);
         }
-        
         if (cmd.type === 'GET_STATE') {
-            const game = games[cmd.roomId];
-            if (game) {
-                fs.writeFileSync(CONTROL_OUT, JSON.stringify({ status: 'OK', state: game.getState() }));
-            } else {
-                fs.writeFileSync(CONTROL_OUT, JSON.stringify({ status: 'ERROR', message: 'Game not found' }));
-            }
-            return;
+            const game = roomManager.getGame(cmd.roomId);
+            fs.writeFileSync(CONTROL_OUT, JSON.stringify({ status: game ? 'OK' : 'ERROR', state: game ? game.getState() : null }));
         }
-    } catch (err) {
-        console.error('Control interface error:', err);
-    }
+    } catch (err) { console.error('Control error:', err); }
 });
 
-// Bot Control REST API
+// Bot API
 app.post('/api/bot/join', (req, res) => {
     const { roomId, playerName } = req.body;
-    if (!roomId || !playerName) return res.status(400).json({ error: 'Missing roomId or playerName' });
-    
-    if (!games[roomId]) {
-        games[roomId] = new Game(roomId);
+    const game = roomManager.createRoom(roomId);
+    let player = game.players.find(p => p.name === playerName);
+    if (!player) {
+        const playerId = 'bot-' + require('uuid').v4().slice(0, 8);
+        player = { id: playerId, name: playerName, socketId: null, icon: AVATARS[0] };
+        if (!game.join(player)) return res.status(400).json({ error: 'Room full' });
     }
-    const game = games[roomId];
-    
-    // Check if player name already exists (reconnect case for bot)
-    let existingPlayer = game.players.find(p => p.name === playerName);
-    let playerId;
-    
-    if (existingPlayer) {
-        playerId = existingPlayer.id;
-        // Optional: override socket if bot masquerading, but bots have null socket connections for now
-        existingPlayer.connected = true; // pretend connected
-    } else {
-        const { v4: uuidv4 } = require('uuid');
-        playerId = 'bot-' + uuidv4().slice(0, 8);
-        const randomIcon = AVATARS[Math.floor(Math.random() * AVATARS.length)];
-        const player = { id: playerId, name: playerName, socketId: null, icon: randomIcon };
-        
-        if (!game.join(player)) {
-            return res.status(400).json({ error: 'Room full' });
-        }
-    }
-
-    io.to(roomId).emit('game_update', game.getState());
-    logSession(roomId, { event: 'bot_joined', playerName });
-    res.json({ success: true, playerId });
+    player.connected = true;
+    roomManager.logSession(roomId, { event: 'bot_joined', playerName });
+    if (!maybeAutoStartGame(game, roomId)) notifyGameState(roomId);
+    res.json({ success: true, playerId: player.id });
 });
 
 app.get('/api/bot/state/:roomId/:playerId', (req, res) => {
     const { roomId, playerId } = req.params;
-    const game = games[roomId];
+    const game = roomManager.getGame(roomId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
-    
     const player = game.players.find(p => p.id === playerId);
-    if (!player) return res.status(404).json({ error: 'Player not found in game' });
-    
-    res.json({
-        state: game.getState(),
-        hand: player.hand
-    });
+    res.json({ state: game.getState(), hand: player ? player.hand : [] });
 });
 
 app.post('/api/bot/play', (req, res) => {
     const { roomId, playerId, cardIndices } = req.body;
-    const game = games[roomId];
-    if (!game) return res.status(404).json({ error: 'Game not found' });
-    
-    const result = game.play(playerId, cardIndices || []);
+    const result = roomManager.botPlay(roomId, playerId, cardIndices);
     if (result.success) {
-        io.to(roomId).emit('game_update', game.getState());
-        // Normal human clients get hands updated
-        game.players.forEach(p => {
-            if (p.socketId) io.to(p.socketId).emit('private_hand', p.hand);
-        });
-        logSession(roomId, { event: 'bot_play', playerId, cardIndices, type: result.type });
+        notifyGameState(roomId);
+        checkAutoRestartGame(roomManager.getGame(roomId), roomId);
         res.json({ success: true, type: result.type });
     } else {
         res.status(400).json({ error: result.error });
     }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

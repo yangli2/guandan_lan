@@ -9,3 +9,11 @@ yarn-error.log*
 .idea/
 .vscode/
 *.local
+# Temporary files
+analysis_output.json
+combined_game_log.json
+logs/
+scratch/
+server/coverage/
+server/logs/session_*.json
+*.json.tmp

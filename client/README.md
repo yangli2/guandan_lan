@@ -1,16 +1,28 @@
-# React + Vite
+# Guandan LAN - Client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend for Guandan LAN, built with React and Vite.
 
-Currently, two official plugins are available:
+## 🎨 UI Features
+- **Hand Management**: Cards are organized by rank in vertical stacks to manage the 27-card hand.
+- **Real-time Updates**: Integrated with Socket.io to receive game state and private hand updates instantly.
+- **Responsive Design**: Modern Glassmorphism aesthetics with a high-contrast "Dark Text" theme.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🛠️ Tech Stack
+- **Framework**: React 19
+- **Build Tool**: Vite
+- **Icons**: Lucide React
+- **Styling**: Vanilla CSS
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🚀 Development
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Run development server:
+   ```bash
+   npm run dev
+   ```
+3. Build for production:
+   ```bash
+   npm run build
+   ```

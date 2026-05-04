@@ -1,0 +1,19 @@
+{
+  "name": "ai_agent_server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.14.28",
+    "axios": "^1.15.2",
+    "dotenv": "^17.4.2",
+    "undici": "^8.1.0"
+  }
+}

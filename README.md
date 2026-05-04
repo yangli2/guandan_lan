@@ -18,6 +18,7 @@ A modern, high-performance web implementation of the classic Chinese card game *
   - **Modern Aesthetics**: Glassmorphism effects, smooth transitions, and responsive design.
 - **Admin Controls**: Server-wide reset functionality to clear game state and re-initialize sessions.
 - **Developer Ready**: Includes a REST API for bot control and automated E2E testing with Playwright.
+- **Control Interface**: File-based control system for external automation.
 
 ## 🚀 Getting Started
 
@@ -71,12 +72,25 @@ A modern, high-performance web implementation of the classic Chinese card game *
 5. In the **Tribute Phase**, losers will automatically give their highest cards, and winners must select one card from their hand to return.
 
 ## 🛠️ Technology Stack
-
 - **Frontend**: React (v19), Vite, Lucide React (Icons), Vanilla CSS.
 - **Backend**: Node.js, Express, Socket.io.
 - **Testing**: Playwright (E2E).
 
+## 🤖 Developer API & Automation
+
+### Bot REST API
+Allows external bots to participate in games without a browser.
+- `POST /api/bot/join`: Join a room. Body: `{ roomId, playerName }`
+- `GET /api/bot/state/:roomId/:playerId`: Get game state and player's hand.
+- `POST /api/bot/play`: Play cards. Body: `{ roomId, playerId, cardIndices }`
+
+### Control Interface (File-based)
+The server watches `server/control_in.json` for commands and writes to `server/control_out.json`.
+- **SERVER_PLAY**: Forces the current player to play specific cards.
+- **GET_STATE**: Requests the current state of a specific room.
+
 ## 📄 License
+
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

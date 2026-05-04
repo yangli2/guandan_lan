@@ -1,4 +1,4 @@
-const { RANKS, JOKERS, COMBO_TYPES } = require('./constants');
+import { RANKS, JOKERS, COMBO_TYPES } from './constants.js';
 
 /**
  * Guandan Engine
@@ -227,7 +227,7 @@ function compareCombos(prev, current) {
     return current.value > prev.value;
 }
 
-module.exports = {
+export {
     getCardRankValue,
     isWildCard,
     sortCards,

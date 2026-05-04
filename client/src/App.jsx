@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import io from 'socket.io-client';
 import * as Icons from 'lucide-react';
+import { analyzeCombo } from './logic/engine.js';
 import './index.css';
 
 const socket = io();
@@ -44,7 +45,10 @@ const translations = {
     selectOne: "Select exactly one card to return",
     someonePlay: (name) => `${name}'s Play`,
     wild: "WILD",
-    resistance: "RESISTANCE! Tribute cancelled due to 2 Big Jokers."
+    resistance: "RESISTANCE! Tribute cancelled due to 2 Big Jokers.",
+    invalidCombo: "Invalid combination of cards",
+    group: "Group",
+    ungroup: "Ungroup"
   },
   cn: {
     title: "掼蛋",
@@ -86,7 +90,10 @@ const translations = {
     tributeHistory: "进贡记录",
     tributeReceived: (from, card) => `收到来自 ${from} 的 ${card}`,
     waitingReturn: "等待还贡：",
-    returnPending: "待还贡"
+    returnPending: "待还贡",
+    invalidCombo: "无效的牌型组合",
+    group: "组合",
+    ungroup: "解散"
   }
 };
 
@@ -131,6 +138,7 @@ function App() {
   const [gameState, setGameState] = useState(null);
   const [hand, setHand] = useState([]);
   const [selectedCards, setSelectedCards] = useState([]);
+  const [customGroups, setCustomGroups] = useState([]);
   const [roomInfo, setRoomInfo] = useState(null);
   const [isJoining, setIsJoining] = useState(false);
 
@@ -198,9 +206,32 @@ function App() {
   }, [gameState]);
 
   // Sorting and Grouping Hand
-  const sortedHandGroups = useMemo(() => {
-    if (!gameState) return [];
+  const { renderedGroups, sortedHandGroups } = useMemo(() => {
+    if (!gameState) return { renderedGroups: [], sortedHandGroups: [] };
     const level = gameState.currentLevel;
+
+    // Create a pool of available cards with original indices
+    const availableCards = hand.map((card, index) => ({ card, index }));
+    const renderedGroups = [];
+
+    // Try to satisfy each custom group
+    for (const group of customGroups) {
+      const satisfiedGroup = [];
+      for (const desiredCard of group) {
+        const foundIdx = availableCards.findIndex(
+          ac => ac && ac.card.suit === desiredCard.suit && ac.card.rank === desiredCard.rank
+        );
+        if (foundIdx !== -1) {
+          satisfiedGroup.push(availableCards[foundIdx]);
+          availableCards[foundIdx] = null; // Mark as used
+        }
+      }
+      if (satisfiedGroup.length > 0) {
+        renderedGroups.push(satisfiedGroup);
+      }
+    }
+
+    const remainingCards = availableCards.filter(ac => ac !== null);
 
     const getTrumpingValue = (card) => {
       if (card.rank === 'BJ') return 20;
@@ -213,18 +244,18 @@ function App() {
       return rankMap[card.rank] || 0;
     };
 
-    const sorted = [...hand].sort((a, b) => getTrumpingValue(a) - getTrumpingValue(b));
+    remainingCards.sort((a, b) => getTrumpingValue(a.card) - getTrumpingValue(b.card));
     
     const SUITS_ORDER = ['S', 'H', 'C', 'D'];
 
     // Group by rank for vertical stacking
     const groups = [];
-    sorted.forEach((card) => {
+    remainingCards.forEach(({card, index}) => {
         const lastGroup = groups[groups.length - 1];
         if (lastGroup && lastGroup[0].card.rank === card.rank) {
-            lastGroup.push({ card, index: hand.indexOf(card) });
+            lastGroup.push({ card, index });
         } else {
-            groups.push([{ card, index: hand.indexOf(card) }]);
+            groups.push([{ card, index }]);
         }
     });
 
@@ -233,8 +264,8 @@ function App() {
         group.sort((a, b) => SUITS_ORDER.indexOf(a.card.suit) - SUITS_ORDER.indexOf(b.card.suit));
     });
     
-    return groups;
-  }, [hand, gameState]);
+    return { renderedGroups, sortedHandGroups: groups };
+  }, [hand, gameState, customGroups]);
 
   // Seating Positions (Robust)
   const orderedPlayers = useMemo(() => {
@@ -264,6 +295,22 @@ function App() {
 
   const playCards = () => {
     socket.emit('play_cards', { roomId, cardIndices: selectedCards });
+  };
+
+  const groupCards = () => {
+    if (selectedCards.length === 0) return;
+    const cardsToGroup = selectedCards.map(idx => hand[idx]);
+    const combo = analyzeCombo(cardsToGroup, gameState?.currentLevel);
+    if (!combo) {
+      alert(t('invalidCombo'));
+      return;
+    }
+    setCustomGroups([...customGroups, cardsToGroup]);
+    setSelectedCards([]);
+  };
+
+  const ungroupCards = (groupIndex) => {
+    setCustomGroups(prev => prev.filter((_, i) => i !== groupIndex));
   };
 
   const returnTribute = () => {
@@ -470,6 +517,32 @@ function App() {
         )}
       </div>
 
+      {/* Custom Groups */}
+      {renderedGroups.length > 0 && (
+        <div className="custom-groups-area">
+          {renderedGroups.map((group, gIdx) => (
+            <div key={gIdx} className="custom-group-box">
+              <button className="ungroup-btn" onClick={() => ungroupCards(gIdx)} title={t('ungroup')}>
+                <Icons.X size={14} />
+              </button>
+              <div style={{ display: 'flex' }}>
+                {group.map(({card, index}, i) => (
+                  <div key={index} style={{ marginLeft: i > 0 ? '-30px' : '0' }}>
+                    <Card 
+                      card={card} 
+                      selected={selectedCards.includes(index)} 
+                      onClick={() => toggleCard(index)}
+                      currentLevel={gameState?.currentLevel}
+                      t={t}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* My Hand (Stacked) */}
       <div className="player-hand">
         {sortedHandGroups.map((group, gIdx) => (
@@ -492,6 +565,11 @@ function App() {
       <div style={{ position: 'fixed', bottom: '40px', right: '40px', display: 'flex', flexDirection: 'column', gap: '15px', zIndex: 1000 }}>
         {gameState?.turn !== undefined && gameState.players[gameState.turn]?.socketId === socket.id && gameState.state === 'PLAYING' && (
             <>
+                {selectedCards.length > 0 && (
+                  <button className="btn-secondary" style={{ padding: '15px', fontSize: '18px', background: '#eab308', color: '#1a1a1a', border: 'none' }} onClick={groupCards}>
+                    <Icons.Layers size={20} style={{marginRight: '8px'}}/> {t('group')}
+                  </button>
+                )}
                 <button className="btn-primary" style={{ padding: '20px 40px', fontSize: '20px' }} onClick={playCards}><Icons.Send size={24}/> {t('playCards')}</button>
                 <button className="btn-secondary" style={{ padding: '15px', fontSize: '18px' }} onClick={() => { socket.emit('play_cards', { roomId, cardIndices: [] }); setSelectedCards([]); }}>{t('pass')}</button>
             </>
